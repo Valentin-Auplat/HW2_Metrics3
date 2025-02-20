@@ -1,6 +1,6 @@
 ---
 title: 'Problem Set 3: Replication and Discussion of an IV'
-author: "Luc Behaghel and Pietro Geuna"
+author: "Valentin Auplat, Tom Hamburger, Solal Godechot"
 date: "February 2025"
 output:
   pdf_document: default
@@ -64,13 +64,13 @@ kable(summary_table, caption = "Summary Statistics of score variables from PSEN9
 
 
 ```
-We don't see much differences between the cores from a year to another. The global score of year 1 in the dataset PPEN97 is equivalent to the scores and male and female students in year 3 (3% difference), and standard error are as well. We note that the averages presented here are above the average of the distribution. For year 6 and year 9, we note a slight decrease in the standard deviations of the scores, and most importantly a decrease in the average grade compared to years 1 and 3. However, the distribution of grades should be standardized as the go from 0 to 20 or from 0 top 100 depending on the year. Section 4 precises that they are, but it is not reflected in the dataset. In addition, we can note that a bit less than a third of the values of some variables from both datasets are missing. Therefore, we can suspect there might be endogeinety in our analysis because the absence of values is unlikely to be randomly distributed.
+We don't see much differences between the scores from a year to another. The global score of year 1 in the data set PPEN97 is equivalent to the scores and male and female students in year 3 (3% difference), and standard error are as well. We note that the averages presented here are above the average of the distribution. For year 6 and year 9, we note a slight decrease in the standard deviations of the scores, and most importantly a decrease in the average grade compared to years 1 and 3. However, the distribution of grades should be standardized as they go from 0 to 20 or from 0 top 100 depending on the year. Section 4 precises that they are, but it is not reflected in the data set. In addition, we can note that a bit less than a third of the values of some variables from both data sets are missing. Therefore, we can suspect there might be endogeneity in our analysis because the absence of values is unlikely to be randomly distributed.
 
-2. Prepare the dataset with necessary variables:
+2. Prepare the data set with necessary variables:
    - Convert binary indicators into 0-1 format.
    - Generate the pupil’s age at test (in months) and the "assigned relative age."
 
-```{r echo = FALSE, warning = FALSE}
+```{r echo = TRUE, warning = FALSE}
 PPEN97 <- PPEN97 %>%
   mutate_at(vars(sexe, public_1, public_3), funs( . - 1)) %>%
   mutate_at(vars(prior_area_1:prior_area_3), funs(ifelse(.==2,0,.))) %>%
@@ -97,13 +97,11 @@ PSEN95 <- PSEN95 %>%
 
 1. Discuss the main empirical challenges of estimating the effect of age on educational attainment using OLS.
 
-What we are interested in in the first place is the effect of age on academic success. For a naïve estimation to be telling about the month of birth effect, we would need the relationship between pupils' age and their time spent at school to be the same for each pupil. Otherwise, the age differences in an observed cohort (defined as pupils attending school at the same time) would not be telling at all because some behaviors would diminish it artificially. Actually, we are likely to observe this for two reasons according to the author:
+What we are interested in in the first place is the effect of age on academic success. For a naive estimation to be telling about the month of birth effect, we would need the relationship between pupils' age and their time spent at school to be the same for each pupil. Otherwise, the age differences in an observed cohort (defined as pupils attending school at the same time) would not be telling at all because some behaviors would diminish it artificially. Actually, we are likely to observe this for two reasons according to the author:
 
 First, pupils born at the beginning of the year are more likely to begin their schooling a year in advance, whereas pupils born at the end of the year are more likely to start school one year late. This is because parents decide to enroll their children at school by comparing their age with the age of their potential classmates. And they try to make them match. In addition, the children born at the end of the year are more likely to be held back a year, and children born at the beginning of the year are more likely to skip a grade. These phenomena diminish the actual age difference in a cohort, which would lead us to under estimate the effect of age on academic success.
 
 This is not the only issue, because these strategies from the parents are likely to introduce endogeneity. For example, only few parents implement strategies to control the month of birth of their children (to optimize their career path, or the schooling of the children), which would affect the age difference within a class and could be related to the children's socio-economic background. The latter, which would be captured in the residuals of a naive OLS regression, would be correlated with the outcome, and the month of birth variable, introducing endogeneity.
-
-The author must deal with these identification issues in order to compute an accurate estimate of the real month of birth effect.
 
 
 
@@ -172,7 +170,7 @@ stargazer(lm_exam_brevlv11, header=FALSE, type='latex', float=FALSE, title = "Na
 
 5. Interpret the results. Discuss potential biases in OLS estimates.
 
-We see that the naive OLS estimation is not accurate and cannot be trusted there as it provides contradictory results. They go against the robust assumption that older pupils get a higher grade than younger ones in a same cohort (around minus 0.05 points of normalized score per month for year 9 and year 6 exams, and minus 0.01 for the year 3 exam). And most importantly because if we trust the naive OLS, we have to conclude that the pupils' age has an opposite effect for the first year exam (plus 0.03 points of normalized score per additional month)! Therefore, we have to recognize that the naive OLS probably provides biased results, and does not allow to reach the conclusions the author aim for. We have to think about ways to work around potential endogeneity (such as students held up remaining in the higher age range and scoring low).
+We see that the naive OLS estimation is not accurate and cannot be trusted there as it provides contradictory results. They go against the robust assumption that older pupils get higher grades than younger ones in a same cohort (around minus 0.05 points of normalized score per month for year 9 and year 6 exams, and minus 0.01 for the year 3 exam). And most importantly because if we trust the naive OLS, we have to conclude that the pupils' age has an opposite effect for the first year exam (plus 0.03 points of normalized score per additional month)! Therefore, we have to recognize that the naive OLS probably provides biased results, and does not allow to reach the conclusions the author aims for. We have to think about ways to work around potential endogeneity (such as students held up remaining in the higher age range and scoring low).
 
 # IV Estimation of Month of Birth Effects
 
@@ -182,7 +180,7 @@ For an IV instrument to be valid, it needs to fulfill the relevance condition an
 
 Firstly, as $z_i=12-m_i$ ($m_i$ being the month of birth), the relevance condition is fulfilled because the large majority of children enter school at the normal age. Therefore, the correlation between pupils' age and their relative assigned age must be close to one. As school years pass by, the correlation should decrease, as more and more pupils will skip or retake a school year (but this is marginal). We can note that the instrumental variable score will be higher of pupils born in January, and minimized for pupils born in December.
 
-Secondly, as $m_i$ might not be random, we cannot seriously assume that the relative assigned age is not correlated with other determinants of academic success. We have already discussed the fact that some parents, belonging to specific socio-economic classes, might choose the month of birth of their children, which directly impacts the instrument, and might be correlated with children's socio-economic background characteristics determining academic and professional success.
+Secondly, if we assume that $m_i$ is randomly distributed, then the exclusion condition is fulfilled. But the author mentions it is not necessarily the case. As $m_i$ might not be random, we might not assume that the relative assigned age is not correlated with other determinants of academic success. We have already discussed the fact that some parents, belonging to specific socio-economic classes, might choose the month of birth of their children, which directly impacts the instrument, and might be correlated with children's socio-economic background characteristics determining academic and professional success.
 
 
 2. Write down the statistical model for columns 3 and 4 in Table 1 and derive the IV estimator. What does it identify?
@@ -196,7 +194,7 @@ Where $s_{ig}$ is test score  obtained in grade level $g$ by pupil $i$.  $\mu_g$
 
 We can compute the IV estimator as:
 $$\beta_{IV}=\frac{\frac{Cov(s_g;z)}{V(s)}}{\frac{Cov(a_g;z)}{V(z)}}=\frac{Cov(s_g;z)}{Cov(a_g;z)}=\frac{\mu_g}{\delta_g}=LATE$$
-We recognize the Local Average Treatment Effect in this IV estimate, i.e. the average treatment effect on compliers, i.e. the influence of absolute age on test scores for pupils that have started school normally (no advance or delay).
+We recognize the Local Average Treatment Effect in this IV estimate (as long as the two conditions and the no-defiers assumption hold), i.e. the average treatment effect on compliers, i.e. the influence of the exogenous variations of absolute age on test scores for pupils that have started school normally (no advance or delay).
 
 3. Replicate columns 3-7 of Table 1 using PPEN97 data and format the results in a table.
 
@@ -275,7 +273,7 @@ stargazer(table37, type='latex', float=FALSE, title="Impact of absolute age on t
 
 All the coefficients of the IV estimations are statistically significant at the 1% risk level. Being a month older increases the Year 1 score by 0.063 units. We see that this effect is persistent but less and less important over time, falling to 0.05 units for math exam in Year 3, and to 0.036 units for french exam in Year 3.
 
-We see that the coefficients we get from the IV models are very different from the ones we get with the naive OLS. They have the same sign for the first year, but the OLS estimators become negative for year 3 whereas as the IV estimators remain positive. Therefore, we can infer that there must be a downward bias in the OLS estimates. This bias is due to the increase in the difference between the observed age of pupils and their normal age for their grade. Because there is an increasing number of skippers and retainers over time, the absolute age differences shrink, and therefore the OLS regression of test scores on month of birth "would under estimate the true impact of absolute age differences on pupils performance" according to the author.
+We see that the coefficients we get from the IV models are very different from the ones we get with the naive OLS. They have the same sign for the first year, but the OLS estimators become negative for year 3 whereas as the IV estimators remain positive. Therefore, we can conclude that there must be a downward bias in the OLS estimates. This bias is due to the increase in the difference between the observed age of pupils and their normal age for their grade. Because there is an increasing number of skippers and retainers over time, the absolute age differences shrink, and therefore the OLS regression of test scores on month of birth "would under estimate the true impact of absolute age differences on pupils performance" according to the author.
 
 We are comforted in this analysis as the IV models used seem robust. All of them provide almost the same estimates, and all have low variance. In particular, we see that adding controls and keeping only pupils born in January and December don't change the estimates and their significance too much. Therefore, we could consider that our framework is robust to the violations of the exclusion condition we were concerned about.
 
