@@ -1,0 +1,282 @@
+---
+title: 'Problem Set 3: Replication and Discussion of an IV'
+author: "Luc Behaghel and Pietro Geuna"
+date: "February 2025"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+# Education and Date of Birth Effects
+
+In the 2011 paper "Academic performance, Educational Trajectories and the Persistence of Date of Birth Effects. Evidence from France", Julien Grenet studies the impact of date of birth on educational and labor market outcomes, exploiting institutional features of the French educational system. Read in detail sections 1, 2, 3, and 6.1 from the paper to understand the setting, the empirical strategy, and his main results.
+
+In this problem set, we will replicate some of his results, using data from the Panel Primaire de l’Éducation nationale 1997 (PPEN97) and the Panel Secondaire de l’Éducation nationale 1995 (PSEN95), which are uploaded to the course website together with the paper. These datasets are provided for pedagogical purposes only. Please do not share or use them in other contexts than this problem set. You can check the "pupil datasets" and "test scores" subsections from the data section in the paper for details on both data sources. The data has been partially cleaned, and a variables’ dictionary (in English) is provided on the course website.
+
+# Data Preparation
+
+1. Open the PPEN97 and PSEN95 datasets in R and get familiar with variables’ names and coding. Provide basic summary statistics of the test scores variables for each year and comment.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+library(haven)
+library(dplyr)
+library(knitr)
+library(tidyr)
+library(ggplot2)
+library(stargazer)
+```
+
+```{r echo = FALSE}
+PPEN97 <- read_dta("C:/Users/valen/Desktop/ENS Paris/2024-2025/Metrics 3/HW/HW 2/PPEN97.dta") 
+new_PPEN97 <- PPEN97 %>% dplyr::select(c("scglob", "score_f_3", "score_m_3"))
+PSEN95 <- read_dta("C:/Users/valen/Desktop/ENS Paris/2024-2025/Metrics 3/HW/HW 2/PSEN95.dta")
+new_PSEN95 <- PSEN95 %>% dplyr::select(c("franel", "mathel", "brevfra1", "brevmat1", "brevlv11"))
+
+# Compute summary statistics in the correct format
+summary_table <- new_PPEN97 %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+  group_by(Variable) %>%
+  summarise(
+    Mean = mean(Value, na.rm = TRUE),
+    SD = sd(Value, na.rm = TRUE),
+    Min = min(Value, na.rm = TRUE),
+    Max = max(Value, na.rm = TRUE),
+    Missing_values = sum(is.na(Value))
+  )
+# Display table
+kable(summary_table, caption = "Summary Statistics of score variables from PPEN97")
+
+# Compute summary statistics in the correct format
+summary_table <- new_PSEN95 %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value") %>%
+  group_by(Variable) %>%
+  summarise(
+    Mean = mean(Value, na.rm = TRUE),
+    SD = sd(Value, na.rm = TRUE),
+    Min = min(Value, na.rm = TRUE),
+    Max = max(Value, na.rm = TRUE),
+    Missing_values = sum(is.na(Value))
+  )
+# Display table
+kable(summary_table, caption = "Summary Statistics of score variables from PSEN95")
+
+
+
+```
+We don't see much differences between the cores from a year to another. The global score of year 1 in the dataset PPEN97 is equivalent to the scores and male and female students in year 3 (3% difference), and standard error are as well. We note that the averages presented here are above the average of the distribution. For year 6 and year 9, we note a slight decrease in the standard deviations of the scores, and most importantly a decrease in the average grade compared to years 1 and 3. However, the distribution of grades should be standardized as the go from 0 to 20 or from 0 top 100 depending on the year. Section 4 precises that they are, but it is not reflected in the dataset. In addition, we can note that a bit less than a third of the values of some variables from both datasets are missing. Therefore, we can suspect there might be endogeinety in our analysis because the absence of values is unlikely to be randomly distributed.
+
+2. Prepare the dataset with necessary variables:
+   - Convert binary indicators into 0-1 format.
+   - Generate the pupil’s age at test (in months) and the "assigned relative age."
+
+```{r echo = FALSE, warning = FALSE}
+PPEN97 <- PPEN97 %>%
+  mutate_at(vars(sexe, public_1, public_3), funs( . - 1)) %>%
+  mutate_at(vars(prior_area_1:prior_area_3), funs(ifelse(.==2,0,.))) %>%
+  mutate_at(vars(nati), funs(ifelse(.==100,0,1))) %>%
+  mutate_at(vars(pcspere_1:pcsmere_3, size_area_1:dep_3), funs(as.character(.))) %>%
+  mutate(age_exam_1 = (97-anai)*12+(10-mnai)) %>%
+  mutate(age_exam_3 = (yr_3-(1900+anai))*12+(10-mnai)) %>%
+  mutate(ass_rel_age = 12 - mnai)
+  
+PSEN95 <- PSEN95 %>%
+  mutate_at(vars(sexe, public_6, public_9), funs(as.numeric(.))) %>%
+  mutate_at(vars(sexe, public_6, public_9), funs( . - 1)) %>%
+  mutate_at(vars(prior_area_6, prior_area_9), funs(ifelse(.==2,0,.))) %>%
+  mutate_at(vars(nateleve), funs(ifelse(.==100,0,1))) %>%
+  mutate_at(vars(pcspere_6,pcsmere_6,pcspere_9,pcsmere_9,size_area_6,size_area_9,dep_6,dep_9), funs(as.character(.))) %>%
+  mutate(mnai = as.numeric(substr(datenai, 3, 4))) %>%
+  mutate(anai = as.numeric(substr(datenai, 5, 6)))  %>%
+  mutate(age_exam_6 = (yr_6-(1900+anai))*12+(10-mnai)) %>%
+  mutate(age_exam_9 = (yr_9-(1900+anai))*12+(6-mnai)) %>%
+  mutate(ass_rel_age = 12 - mnai)
+```
+
+# Naïve Estimation of Month of Birth Effects
+
+1. Discuss the main empirical challenges of estimating the effect of age on educational attainment using OLS.
+
+What we are interested in in the first place is the effect of age on academic success. For a naïve estimation to be telling about the month of birth effect, we would need the relationship between pupils' age and their time spent at school to be the same for each pupil. Otherwise, the age differences in an observed cohort (defined as pupils attending school at the same time) would not be telling at all because some behaviors would diminish it artificially. Actually, we are likely to observe this for two reasons according to the author:
+
+First, pupils born at the beginning of the year are more likely to begin their schooling a year in advance, whereas pupils born at the end of the year are more likely to start school one year late. This is because parents decide to enroll their children at school by comparing their age with the age of their potential classmates. And they try to make them match. In addition, the children born at the end of the year are more likely to be held back a year, and children born at the beginning of the year are more likely to skip a grade. These phenomena diminish the actual age difference in a cohort, which would lead us to under estimate the effect of age on academic success.
+
+This is not the only issue, because these strategies from the parents are likely to introduce endogeneity. For example, only few parents implement strategies to control the month of birth of their children (to optimize their career path, or the schooling of the children), which would affect the age difference within a class and could be related to the children's socio-economic background. The latter, which would be captured in the residuals of a naive OLS regression, would be correlated with the outcome, and the month of birth variable, introducing endogeneity.
+
+The author must deal with these identification issues in order to compute an accurate estimate of the real month of birth effect.
+
+
+
+2. Replicate Figure 7(a) from the paper, plotting theoretical versus observed age differences using the PPEN97 data. What do you conclude? Relate it to the previous question.
+
+```{r echo = FALSE}
+fig <- PPEN97 %>%
+  group_by(mnai) %>%
+  summarise(avg_age = mean(age_exam_3, na.rm = T)) %>%
+  mutate(theo_age = 8*12 + (10-mnai)) %>%
+  mutate(mnai = as.character.Date(mnai))
+plot1 <- ggplot(fig, aes(x = mnai, group = 1)) + 
+  geom_point(aes(y = avg_age, color = "#2d2d2d"), shape = 18) +
+  geom_line(aes(y = avg_age, color = "#2d2d2d")) +
+  geom_point(aes(y = theo_age, color = "black"), shape = 0) +
+  geom_line(aes(y = theo_age, color = "black"), linetype = "twodash") +
+  xlab("Month of Birth") +
+  ylab("Age in Months") +
+  scale_x_discrete(labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")) + 
+  theme_bw() +
+  ggtitle("Average vs Theoretical age at exam 3 time") +
+  theme(legend.title = element_blank()) +
+  scale_color_manual(labels = c("Average age", "Theoretical age"), values = c("#2d2d2d", "black"))
+plot1
+```
+
+3. Replicate column 2, rows 1-3 from Table 1 in the paper using the PPEN97 dataset.
+
+```{r echo = FALSE, results='asis'}
+#Transformation of variables and sample:
+lm_exams <- subset(PPEN97, subset = !is.na(PPEN97$age_exam_1)) 
+lm_exams$scglob <- scale(lm_exams$scglob)
+lm_exams$score_f_3 <- scale(lm_exams$score_f_3)
+lm_exams$score_m_3 <- scale(lm_exams$score_m_3)
+
+
+lm_exam_1 <- lm(data = lm_exams, scglob ~ age_exam_1)
+lm_exam_fr <- lm(data = lm_exams, score_f_3 ~ age_exam_3)
+lm_exam_ma <- lm(data = lm_exams, score_m_3 ~ age_exam_3)
+
+stargazer(lm_exam_1, lm_exam_fr, lm_exam_ma, header=FALSE, float=FALSE, type='latex', title = "Naive Estimations", dep.var.caption = "Scores", dep.var.labels = c("Year 1 Exam", "Year 3 Exam French", "Year 3 Exam Maths"), covariate.labels = c("Age in Months (Year 1 Exam)", "Age in Months (Year 3 Exam)"))
+```
+
+4. Replicate rows 4-8 using the PSEN95 dataset (*).
+
+```{r echo = FALSE, results='asis'}
+#Transformation of variables and sample:
+lm_exams <- subset(PSEN95, subset = !is.na(PSEN95$age_exam_6)) 
+lm_exams$franel <- scale(lm_exams$franel)
+lm_exams$mathel <- scale(lm_exams$mathel)
+lm_exams$brevfra1 <- scale(lm_exams$brevfra1)
+lm_exams$brevmat1 <- scale(lm_exams$brevmat1)
+lm_exams$brevlv11 <- scale(lm_exams$brevlv11)
+
+lm_exam_franel <- lm(data = lm_exams, franel ~ age_exam_6)
+lm_exam_mathel <- lm(data = lm_exams, mathel ~ age_exam_6)
+lm_exam_brevfra1 <- lm(data = lm_exams, brevfra1 ~ age_exam_9)
+lm_exam_brevmat1 <- lm(data = lm_exams, brevmat1 ~ age_exam_9)
+lm_exam_brevlv11 <- lm(data = lm_exams, brevlv11 ~ age_exam_9)
+
+stargazer(lm_exam_franel, lm_exam_mathel, header=FALSE, float=FALSE, type='latex', title = "Naive Estimations", dep.var.caption = "Scores", dep.var.labels = c("Year 6 french exam", "Year 6 math exam"), covariate.labels = c("Age in Months (Year 6 Exam)", "Age in Months (Year 9 Exam)"))
+stargazer(lm_exam_brevfra1, lm_exam_brevmat1, header=FALSE, float=FALSE, type='latex', title = "Naive Estimations", dep.var.caption = "Scores", dep.var.labels = c("Year 9 french exam", "Year 9 math exam"), covariate.labels = c("Age in Months (Year 6 Exam)", "Age in Months (Year 9 Exam)"))
+stargazer(lm_exam_brevlv11, header=FALSE, type='latex', float=FALSE, title = "Naive Estimations", dep.var.caption = "Scores", dep.var.labels = c("Year 9 LV exam"), covariate.labels = c("Age in Months (Year 9 Exam)"))
+
+```
+
+5. Interpret the results. Discuss potential biases in OLS estimates.
+
+We see that the naive OLS estimation is not accurate and cannot be trusted there as it provides contradictory results. They go against the robust assumption that older pupils get a higher grade than younger ones in a same cohort (around minus 0.05 points of normalized score per month for year 9 and year 6 exams, and minus 0.01 for the year 3 exam). And most importantly because if we trust the naive OLS, we have to conclude that the pupils' age has an opposite effect for the first year exam (plus 0.03 points of normalized score per additional month)! Therefore, we have to recognize that the naive OLS probably provides biased results, and does not allow to reach the conclusions the author aim for. We have to think about ways to work around potential endogeneity (such as students held up remaining in the higher age range and scoring low).
+
+# IV Estimation of Month of Birth Effects
+
+1. Explain how "assigned relative age" is a valid instrument for age in the test score equation.
+
+For an IV instrument to be valid, it needs to fulfill the relevance condition and the exclusion restriction. 
+
+Firstly, as $z_i=12-m_i$ ($m_i$ being the month of birth), the relevance condition is fulfilled because the large majority of children enter school at the normal age. Therefore, the correlation between pupils' age and their relative assigned age must be close to one. As school years pass by, the correlation should decrease, as more and more pupils will skip or retake a school year (but this is marginal). We can note that the instrumental variable score will be higher of pupils born in January, and minimized for pupils born in December.
+
+Secondly, as $m_i$ might not be random, we cannot seriously assume that the relative assigned age is not correlated with other determinants of academic success. We have already discussed the fact that some parents, belonging to specific socio-economic classes, might choose the month of birth of their children, which directly impacts the instrument, and might be correlated with children's socio-economic background characteristics determining academic and professional success.
+
+
+2. Write down the statistical model for columns 3 and 4 in Table 1 and derive the IV estimator. What does it identify?
+
+The third column of the table corresponds to the result of the first-stage regression which we can write as: $$a_{ig}=\gamma_g+\delta_gz_i+\eta_{ig}=\gamma_g+\delta_g(12-m_i)+\eta_{ig}$$
+Where $a_{ig}$ is the absolute age when the test is taken, and $z_i$ is the instrument (assigned relative age). The first stage measures the independent variations of the absolute age through the relative assigned age (if we assume that both the relevance and exclusion conditions hold). The link between both variables is $\delta_g=\frac{Cov(a_{ig};z_i)}{V(z_i)}$.
+
+Once we have this, we can run the second-stage regression to get the same results as in column 4. We can write the regression model (or reduced form) as:
+$$s_{ig}= \lambda_g + \mu_g z_i +\nu_{ig}=\lambda_g + \mu_g (12-m_i) +\nu_{ig}$$
+Where $s_{ig}$ is test score  obtained in grade level $g$ by pupil $i$.  $\mu_g$ measures the impact of relative age on test scores (still assuming our 2 conditions hold).
+
+We can compute the IV estimator as:
+$$\beta_{IV}=\frac{\frac{Cov(s_g;z)}{V(s)}}{\frac{Cov(a_g;z)}{V(z)}}=\frac{Cov(s_g;z)}{Cov(a_g;z)}=\frac{\mu_g}{\delta_g}=LATE$$
+We recognize the Local Average Treatment Effect in this IV estimate, i.e. the average treatment effect on compliers, i.e. the influence of absolute age on test scores for pupils that have started school normally (no advance or delay).
+
+3. Replicate columns 3-7 of Table 1 using PPEN97 data and format the results in a table.
+
+```{r echo = FALSE, warning = FALSE}
+library(ivreg)
+##centering the test scores
+PPEN97 <- PPEN97 %>%
+  mutate_at(vars(score_f_3, score_m_3, scglob), ~(scale(.)%>% as.vector))
+# IV estimation
+## changing the professional categories to factors 
+PPEN97 <- PPEN97%>%
+  mutate_at(vars(pcschef_1:pcsmere_3, size_area_1, size_area_3, dep_1, dep_3), funs(as.factor(.)))
+## constructing a subset of data to replicate column 7
+PPEN97col7 <- PPEN97%>%
+  filter(ass_rel_age==0|ass_rel_age==11)
+## for year 1
+column3one <- lm(age_exam_1 ~ ass_rel_age, data=PPEN97)
+column4one <- lm(scglob ~ ass_rel_age, data=PPEN97)
+column5one <- ivreg(scglob ~ age_exam_1 | ass_rel_age, data=PPEN97)
+column6one <- ivreg(scglob ~ age_exam_1+sexe+nati+pcsmere_1+pcspere_1+prior_area_1+public_1+size_area_1+nstud_1 |ass_rel_age+sexe+nati+pcsmere_1+pcspere_1+prior_area_1+public_1+size_area_1+nstud_1, data=PPEN97)
+column7one <- ivreg(scglob ~ age_exam_1+sexe+nati+nstud_1+pcsmere_1+pcspere_1+prior_area_1+public_1+size_area_1 |ass_rel_age+sexe+nati+nstud_1+pcsmere_1+pcspere_1+prior_area_1+public_1+size_area_1, data=PPEN97col7, na.action=na.omit)
+## for year 3, French grades
+column3two <- lm(age_exam_3 ~ ass_rel_age, data=PPEN97, na.action = na.omit)
+column3three <- lm(age_exam_3 ~ ass_rel_age, data=PPEN97, na.action = na.omit)
+column4three <- lm(score_f_3 ~ ass_rel_age, data=PPEN97, na.action=na.omit)
+column5three <- ivreg(score_f_3 ~ age_exam_3 | ass_rel_age, data=PPEN97, na.action=na.omit)
+column6three <- ivreg(score_f_3 ~ age_exam_3+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3 |ass_rel_age+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3, data=PPEN97, na.action =na.omit)
+column7three <- ivreg(score_f_3 ~ age_exam_3+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3 |ass_rel_age+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3, data=PPEN97col7, nna.action = na.omit)
+## for year 3, Maths grades
+
+column4two <- lm(score_m_3 ~ ass_rel_age, data=PPEN97, na.action=na.omit)
+column5two <- ivreg(score_m_3 ~ age_exam_3 | ass_rel_age, data=PPEN97, na.action=na.omit)
+column6two <- ivreg(score_m_3 ~ age_exam_3+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3 |ass_rel_age+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3, data=PPEN97, na.action =na.omit)
+column7two <- ivreg(score_m_3 ~ age_exam_3+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3 | ass_rel_age+sexe+nati+nstud_3+pcsmere_3+pcspere_3+prior_area_3+public_3+size_area_3, data=PPEN97col7, na.action = na.omit)
+
+
+regr3one<-cbind(summary(column3one)$coefficients[2,-4])
+regr3two<-cbind(summary(column3two)$coefficients[2,-4])
+regr3three<-cbind(summary(column3three)$coefficients[2,-4])
+colonna3<-rbind(regr3one,regr3two,regr3three)
+regr4one<-cbind(summary(column4one)$coefficients[2,-4])
+regr4two<-cbind(summary(column4two)$coefficients[2,-4])
+regr4three<-cbind(summary(column4three)$coefficients[2,-4])
+colonna4<-rbind(regr4one,regr4two,regr4three)
+regr5one<-cbind(summary(column5one)$coefficients[2,-4])
+regr5two<-cbind(summary(column5two)$coefficients[2,-4])
+regr5three<-cbind(summary(column5three)$coefficients[2,-4])
+colonna5<-rbind(regr5one,regr5two,regr5three)
+regr6one<-cbind(summary(column6one)$coefficients[2,-4])
+regr6two<-cbind(summary(column6two)$coefficients[2,-4])
+regr6three<-cbind(summary(column6three)$coefficients[2,-4])
+colonna6<-rbind(regr6one,regr6two,regr6three)
+regr7one<-cbind(summary(column7one)$coefficients[2,-4])
+regr7two<-cbind(summary(column7two)$coefficients[2,-4])
+regr7three<-cbind(summary(column7three)$coefficients[2,-4])
+colonna7<-rbind(regr7one,regr7two,regr7three)
+
+
+table37<-round(cbind(colonna3, colonna4, colonna5, colonna6, colonna7),3)
+for (x in c(0,1,2)) {
+  table37[2+3*x,] <- paste0("(", format(unlist(table37[2+3*x,])),")")
+  table37[3+3*x,] <- paste0("[", format(unlist(table37[3+3*x,])),"]")
+}
+
+colnames(table37)<-c("First Stage", "Reduced Form", "IV", "IV with controls", 
+                     "IV pupils born in Jan. or Dec.")
+rownames(table37)<-c("Year 1: Global score", "SE", "t-stat", 
+                     "Year 3: Maths", "SE", "t-stat",
+                     "Year 3: French", "SE", "t-stat")
+```
+```{r, echo = F, results = 'asis'}
+stargazer(table37, type='latex', float=FALSE, title="Impact of absolute age on test scores in Year 1 and 3", column.labels=c("First Stage", "Reduced Form", "IV", "IV and controls", "IV students born in Jan. or Dec."), header = F)
+```
+
+5. Compare OLS and IV estimates. Discuss the direction of potential bias.
+
+All the coefficients of the IV estimations are statistically significant at the 1% risk level. Being a month older increases the Year 1 score by 0.063 units. We see that this effect is persistent but less and less important over time, falling to 0.05 units for math exam in Year 3, and to 0.036 units for french exam in Year 3.
+
+We see that the coefficients we get from the IV models are very different from the ones we get with the naive OLS. They have the same sign for the first year, but the OLS estimators become negative for year 3 whereas as the IV estimators remain positive. Therefore, we can infer that there must be a downward bias in the OLS estimates. This bias is due to the increase in the difference between the observed age of pupils and their normal age for their grade. Because there is an increasing number of skippers and retainers over time, the absolute age differences shrink, and therefore the OLS regression of test scores on month of birth "would under estimate the true impact of absolute age differences on pupils performance" according to the author.
+
+We are comforted in this analysis as the IV models used seem robust. All of them provide almost the same estimates, and all have low variance. In particular, we see that adding controls and keeping only pupils born in January and December don't change the estimates and their significance too much. Therefore, we could consider that our framework is robust to the violations of the exclusion condition we were concerned about.
+
+
